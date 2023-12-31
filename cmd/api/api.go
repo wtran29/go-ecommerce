@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/wtran29/go-ecommerce/internal/driver"
 )
 
 const version = "1.0.0"
@@ -49,6 +51,7 @@ func main() {
 
 	flag.IntVar(&cfg.port, "port", 4001, "Server port to listen on")
 	flag.StringVar(&cfg.env, "env", "development", "Application environment {development|production|maintenance}")
+	flag.StringVar(&cfg.db.dsn, "dsn", "host=localhost port=5432 user=postgres password=postgres dbname=ecomm_db sslmode=disable timezone=UTC connect_timeout=5", "DSN")
 
 	flag.Parse()
 
@@ -58,13 +61,19 @@ func main() {
 	jsonLogger := slog.NewJSONHandler(os.Stdout, nil)
 	logger := slog.New(jsonLogger)
 
+	conn, err := driver.OpenDB(cfg.db.dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
 	app := &application{
 		config:  cfg,
 		logger:  logger,
 		version: version,
 	}
 
-	err := app.serve()
+	err = app.serve()
 	if err != nil {
 		app.logger.Error("Error starting backend server", err)
 		log.Fatal(err)
