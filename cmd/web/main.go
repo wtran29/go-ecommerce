@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	_ "github.com/joho/godotenv/autoload"
+	"github.com/wtran29/go-ecommerce/internal/driver"
 )
 
 const version = "1.0.0"
@@ -52,6 +55,8 @@ func main() {
 	flag.IntVar(&cfg.port, "port", 4000, "Server port to listen on")
 	flag.StringVar(&cfg.env, "env", "development", "Application environment {development|production}")
 	flag.StringVar(&cfg.api, "api", "http://localhost:4001", "URL to API")
+	flag.StringVar(&cfg.db.dsn, "dsn", fmt.Sprintf("host=%v port=%v user=%v password=%v dbname=%v sslmode=disable timezone=UTC connect_timeout=5",
+		os.Getenv("PG_HOST"), os.Getenv("PG_PORT"), os.Getenv("PG_USER"), os.Getenv("PG_PW"), os.Getenv("PG_DBNAME")), "DSN")
 
 	flag.Parse()
 
@@ -60,6 +65,12 @@ func main() {
 
 	jsonLogger := slog.NewJSONHandler(os.Stdout, nil)
 	logger := slog.New(jsonLogger)
+
+	conn, err := driver.OpenDB(cfg.db.dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
 
 	tc := make(map[string]*template.Template)
 
@@ -70,7 +81,7 @@ func main() {
 		version:       version,
 	}
 
-	err := app.serve()
+	err = app.serve()
 	if err != nil {
 		app.logger.Error("Error starting http server", err)
 		log.Fatal(err)
