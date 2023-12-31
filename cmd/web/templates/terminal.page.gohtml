@@ -22,12 +22,12 @@
     </div>
     <div class="mb-3">
         <label for="cardholder-name" class="form-label">Cardholder Name</label>
-        <input type="text" class="form-control" id="cardholder-name" name="cardholder_name"
+        <input type="text" class="form-control" id="cardholder-name" name="cardholder-name"
             required="" autocomplete="cardholder-name-new">
     </div>
     <div class="mb-3">
         <label for="cardholder-email" class="form-label">Cardholder Email</label>
-        <input type="email" class="form-control" id="cardholder-email" name="cardholder_email"
+        <input type="email" class="form-control" id="cardholder-email" name="email"
             required="" autocomplete="cardholder-email-new">
     </div>
     <div class="mb-3">
@@ -63,7 +63,7 @@
         const payButton = document.getElementById("pay-button");
         const processing = document.getElementById("processing-payment");
 
-        stripe = Stripe('pk_test_8ahLfoPgTY6EZPO1hOFUf2tC');
+        stripe = Stripe({{.StripePubKey}});
         function hidePayButton() {
             payButton.classList.add("d-none");
             processing.classList.remove("d-none");
@@ -113,7 +113,7 @@
                 },
                 body: JSON.stringify(payload),
             }
-            fetch("http://localhost:4001/api/payment-intent", requestOptions)
+            fetch("{{.API}}/api/payment-intent", requestOptions)
                 .then(response => response.text())
                 .then(response => {
                 let data;
@@ -139,6 +139,7 @@
                                 document.getElementById("payment_currency").value = result.paymentIntent.currency;
                                 processing.classList.add("d-none");
                                 showCardSuccess();
+                                document.getElementById("charge_form").submit();
                             }
                         }
                     })
