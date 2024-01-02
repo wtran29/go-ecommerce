@@ -19,5 +19,6 @@ func OpenDB(dsn string) (*sql.DB, error) {
 		fmt.Println("Error pinging database:", err)
 		return nil, err
 	}
+
 	return db, nil
 }

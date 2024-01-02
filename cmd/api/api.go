@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/wtran29/go-ecommerce/internal/driver"
+	"github.com/wtran29/go-ecommerce/internal/models"
 )
 
 const version = "1.0.0"
@@ -30,6 +31,7 @@ type application struct {
 	config  config
 	logger  *slog.Logger
 	version string
+	DB      models.DBModel
 }
 
 func (app *application) serve() error {
@@ -71,6 +73,7 @@ func main() {
 		config:  cfg,
 		logger:  logger,
 		version: version,
+		DB:      models.DBModel{DB: conn},
 	}
 
 	err = app.serve()

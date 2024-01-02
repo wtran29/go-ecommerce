@@ -7,14 +7,17 @@
 
 
 {{define "content"}}
-    <h2 class="mt-5">Success</h2>
+    <h2 class="mt-5">Payment Success</h2>
     <hr>
-    <p>Payment Intent: {{index .Data "pi"}}
-    <p>Cardholder: {{index .Data "cardholder"}}
-    <p>Email: {{index .Data "email"}}
-    <p>Payment method: {{index .Data "pm"}}
-    <p>Payment amount: {{index .Data "pa"}}
-    <p>Currency: {{index .Data "pc"}}
+    <p>Payment Intent: {{index .Data "pi"}}</p>
+    <p>Customer Name: {{index .Data "first_name"}} {{index .Data "last_name"}}</p>
+    <p>Email: {{index .Data "email"}}</p>
+    <p>Payment method: {{index .Data "pm"}}</p>
+    <p>Payment amount: {{index .Data "pa"}}</p>
+    <p>Currency: {{index .Data "pc"}}</p>
+    <p>Last Four: {{index .Data "last_four"}}</p>
+    <p>Bank Return Code: {{index .Data "bank_return_code"}}</p>
+    <p>Expiry Date: {{index .Data "expiry_month"}}/{{index .Data "expiry_year"}}</p>
     
 
 {{end}}

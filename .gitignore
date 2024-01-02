@@ -4,3 +4,8 @@ tmp
 
 dist
 .env
+
+migrations
+database.yml
+
+static

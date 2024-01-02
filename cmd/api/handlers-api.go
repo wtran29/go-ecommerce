@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/wtran29/go-ecommerce/internal/cards"
 )
 
@@ -71,4 +72,22 @@ func (app *application) GetPaymentIntent(w http.ResponseWriter, r *http.Request)
 
 	}
 
+}
+
+func (app *application) GetItemByID(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	itemID, _ := strconv.Atoi(id)
+
+	item, err := app.DB.GetItem(itemID)
+	if err != nil {
+		app.logger.Error(err.Error())
+		return
+	}
+	out, err := json.MarshalIndent(item, "", " ")
+	if err != nil {
+		app.logger.Error(err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(out)
 }
