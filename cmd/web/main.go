@@ -12,6 +12,7 @@ import (
 
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/wtran29/go-ecommerce/internal/driver"
+	"github.com/wtran29/go-ecommerce/internal/models"
 )
 
 const version = "1.0.0"
@@ -35,6 +36,7 @@ type application struct {
 	logger        *slog.Logger
 	templateCache map[string]*template.Template
 	version       string
+	DB            models.DBModel
 }
 
 func (app *application) serve() error {
@@ -56,7 +58,7 @@ func main() {
 	flag.StringVar(&cfg.env, "env", "development", "Application environment {development|production}")
 	flag.StringVar(&cfg.api, "api", "http://localhost:4001", "URL to API")
 	flag.StringVar(&cfg.db.dsn, "dsn", fmt.Sprintf("host=%v port=%v user=%v password=%v dbname=%v sslmode=disable timezone=UTC connect_timeout=5",
-		os.Getenv("PG_HOST"), os.Getenv("PG_PORT"), os.Getenv("PG_USER"), os.Getenv("PG_PW"), os.Getenv("PG_DBNAME")), "DSN")
+		os.Getenv("ECOMM_HOST"), os.Getenv("ECOMM_PORT"), os.Getenv("ECOMM_USER"), os.Getenv("ECOMM_PW"), os.Getenv("ECOMM_DBNAME")), "DSN")
 
 	flag.Parse()
 
@@ -79,6 +81,7 @@ func main() {
 		logger:        logger,
 		templateCache: tc,
 		version:       version,
+		DB:            models.DBModel{DB: conn},
 	}
 
 	err = app.serve()
