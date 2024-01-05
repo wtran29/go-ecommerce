@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -31,6 +32,8 @@ type Item struct {
 	InventoryLevel int       `json:"inventory_level"`
 	Price          int       `json:"price"`
 	Image          string    `json:"image"`
+	IsRecurring    bool      `json:"is_recurring"`
+	PlanID         string    `json:"plan_id"`
 	CreatedAt      time.Time `json:"-"`
 	UpdatedAt      time.Time `json:"-"`
 }
@@ -72,6 +75,8 @@ type Transaction struct {
 	LastFour            string    `json:"last_four"`
 	ExpiryMonth         int       `json:"expiry_month"`
 	ExpiryYear          int       `json:"expiry_year"`
+	PaymentIntent       string    `json:"payment_intent"`
+	PaymentMethod       string    `json:"payment_method"`
 	BankReturnCode      string    `json:"bank_return_code"`
 	TransactionStatusID int       `json:"transaction_status_id"`
 	CreatedAt           time.Time `json:"-"`
@@ -82,7 +87,7 @@ type Transaction struct {
 type User struct {
 	ID        int       `json:"id"`
 	FirstName string    `json:"first_name"`
-	LastName  int       `json:"last_name"`
+	LastName  string    `json:"last_name"`
 	Email     string    `json:"email"`
 	Password  string    `json:"password"`
 	CreatedAt time.Time `json:"-"`
@@ -106,7 +111,7 @@ func (m *DBModel) GetItem(id int) (Item, error) {
 	var item Item
 
 	row := m.DB.QueryRowContext(ctx, `
-		SELECT id, name, description, inventory_level, price, COALESCE(image, ''), created_at, updated_at 
+		SELECT id, name, description, inventory_level, price, COALESCE(image, ''), is_recurring, plan_id, created_at, updated_at 
 		FROM items 
 		WHERE id = $1`, id)
 	err := row.Scan(
@@ -116,6 +121,8 @@ func (m *DBModel) GetItem(id int) (Item, error) {
 		&item.InventoryLevel,
 		&item.Price,
 		&item.Image,
+		&item.IsRecurring,
+		&item.PlanID,
 		&item.CreatedAt,
 		&item.UpdatedAt,
 	)
@@ -133,8 +140,8 @@ func (m *DBModel) InsertTransaction(txn Transaction) (int, error) {
 
 	query := `
 		INSERT INTO transactions
-		(amount, currency, last_four, bank_return_code, transaction_status_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		(amount, currency, last_four, bank_return_code, payment_intent, payment_method, transaction_status_id, expiry_month, expiry_year, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id
 	`
 
@@ -144,7 +151,11 @@ func (m *DBModel) InsertTransaction(txn Transaction) (int, error) {
 		txn.Currency,
 		txn.LastFour,
 		txn.BankReturnCode,
+		txn.PaymentIntent,
+		txn.PaymentMethod,
 		txn.TransactionStatusID,
+		txn.ExpiryMonth,
+		txn.ExpiryYear,
 		time.Now(),
 		time.Now(),
 	).Scan(&txnID)
@@ -228,20 +239,57 @@ func (m *DBModel) CreateTables() {
 	// 	panic("could not create items table")
 	// }
 
-	// err := m.testItemData()
-	// if err != nil {
-	// 	panic("could not create test item data")
-	// }
+	err := m.testItemData()
+	if err != nil {
+		panic("could not create test item data")
+	}
 
 }
 
 func (m *DBModel) testItemData() error {
-	insertTestData := `INSERT INTO items (id, name) VALUES ($1 , $2)`
+	insertTestData := `INSERT INTO items (id, name, description, inventory_level, price, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
-	_, err := m.DB.Exec(insertTestData, 1, "Gopher Toy")
+	_, err := m.DB.Exec(insertTestData,
+		2,
+		"Bronze Series Plan",
+		"Receive three unique items for the price of two every month.",
+		10,
+		2000,
+		time.Now(),
+		time.Now(),
+	)
 	if err != nil {
 		panic("could not create test item data")
 	}
 
 	return nil
+}
+
+// GetUserByEmail gets user by email address
+func (m *DBModel) GetUserByEmail(email string) (User, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	email = strings.ToLower(email)
+	var u User
+
+	row := m.DB.QueryRowContext(ctx, `
+		SELECT id, first_name, last_name, email, password, created_at, updated_at
+		FROM users
+		WHERE email = $1
+	`, email)
+
+	err := row.Scan(
+		&u.ID,
+		&u.FirstName,
+		&u.LastName,
+		&u.Email,
+		&u.Password,
+		&u.CreatedAt,
+		&u.UpdatedAt,
+	)
+	if err != nil {
+		return u, err
+	}
+	return u, nil
 }

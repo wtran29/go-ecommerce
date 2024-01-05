@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/gob"
 	"flag"
 	"fmt"
 	"html/template"
@@ -57,6 +58,7 @@ func (app *application) serve() error {
 	return srv.ListenAndServe()
 }
 func main() {
+	gob.Register(TransactionData{})
 	var cfg config
 	flag.IntVar(&cfg.port, "port", 4000, "Server port to listen on")
 	flag.StringVar(&cfg.env, "env", "development", "Application environment {development|production}")
