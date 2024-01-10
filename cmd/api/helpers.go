@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -94,4 +96,15 @@ func (app *application) PasswordMatches(hash, password string) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+func (app *application) GenerateEncryptionKey(length int) (string, error) {
+	key := make([]byte, length)
+	_, err := rand.Read(key)
+	if err != nil {
+		return "", err
+	}
+
+	keyString := hex.EncodeToString(key)
+	return keyString, nil
 }
