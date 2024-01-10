@@ -1,13 +1,16 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/wtran29/go-ecommerce/internal/cards"
+	"github.com/wtran29/go-ecommerce/internal/encryption"
 	"github.com/wtran29/go-ecommerce/internal/models"
+	"github.com/wtran29/go-ecommerce/internal/urlsigner"
 )
 
 // Home displays the home page
@@ -19,7 +22,7 @@ func (app *application) Home(w http.ResponseWriter, r *http.Request) {
 
 // VirtualTerminal displays terminal page for stripe payment
 func (app *application) VirtualTerminal(w http.ResponseWriter, r *http.Request) {
-	if err := app.renderTemplate(w, r, "terminal", &templateData{}, "stripe-js"); err != nil {
+	if err := app.renderTemplate(w, r, "terminal", &templateData{}); err != nil {
 		app.logger.Error(err.Error())
 	}
 }
@@ -307,6 +310,131 @@ func (app *application) BronzePlanReceipt(w http.ResponseWriter, r *http.Request
 // LoginPage displays login page
 func (app *application) LoginPage(w http.ResponseWriter, r *http.Request) {
 	if err := app.renderTemplate(w, r, "login", &templateData{}); err != nil {
+		app.logger.Error(err.Error())
+	}
+}
+
+func (app *application) PostLoginPage(w http.ResponseWriter, r *http.Request) {
+	app.Session.RenewToken(r.Context())
+
+	err := r.ParseForm()
+	if err != nil {
+		app.logger.Error(err.Error())
+		return
+	}
+
+	email := r.Form.Get("email")
+	password := r.Form.Get("password")
+
+	id, err := app.DB.Authenticate(email, password)
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	app.Session.Put(r.Context(), "userID", id)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+
+}
+
+func (app *application) Logout(w http.ResponseWriter, r *http.Request) {
+	app.Session.Destroy(r.Context())
+	app.Session.RenewToken(r.Context())
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+func (app *application) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	if err := app.renderTemplate(w, r, "forgot-password", &templateData{}); err != nil {
+		app.logger.Error(err.Error())
+	}
+}
+
+func (app *application) ShowResetPassword(w http.ResponseWriter, r *http.Request) {
+	email := r.URL.Query().Get("email")
+	theURL := r.RequestURI
+	testURL := fmt.Sprintf("%s%s", app.config.frontend, theURL)
+
+	signer := urlsigner.Signer{
+		Secret: []byte(app.config.secretkey),
+	}
+
+	valid := signer.VerifyToken(testURL)
+	if !valid {
+		app.logger.Error("Invalid url tampering detected")
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	// check reset password expiry
+	expired := signer.Expired(testURL, 60)
+	if expired {
+		app.logger.Error("Password reset link expired!")
+		// redirect to error page
+		http.Error(w, "Password reset link expired! Please request a new password reset.", http.StatusBadRequest)
+		return
+	}
+
+	useEncrypt := encryption.Encryption{
+		Key: []byte(app.config.secretkey),
+	}
+
+	encryptedEmail, err := useEncrypt.Encrypt(email)
+	if err != nil {
+		app.logger.Error("Encryption failed!")
+		return
+	}
+
+	data := make(map[string]interface{})
+	data["email"] = encryptedEmail
+
+	if err := app.renderTemplate(w, r, "reset-password", &templateData{
+		Data: data,
+	}); err != nil {
+		app.logger.Error(err.Error())
+	}
+
+}
+
+func (app *application) AllSales(w http.ResponseWriter, r *http.Request) {
+	if err := app.renderTemplate(w, r, "all-sales", &templateData{}); err != nil {
+		app.logger.Error(err.Error())
+	}
+}
+
+func (app *application) AllSubscriptions(w http.ResponseWriter, r *http.Request) {
+	if err := app.renderTemplate(w, r, "all-subscriptions", &templateData{}); err != nil {
+		app.logger.Error(err.Error())
+	}
+}
+func (app *application) ShowSale(w http.ResponseWriter, r *http.Request) {
+	stringMap := make(map[string]string)
+	stringMap["title"] = "Sale"
+	stringMap["cancel"] = "/admin/all-sales"
+	stringMap["refund-url"] = "/api/admin/refund"
+	stringMap["refund-btn"] = "Refund Order"
+	stringMap["messages"] = "Charge refunded"
+	stringMap["text"] = "Your charge has been refunded."
+	stringMap["status"] = "Refunded"
+	stringMap["bg-status"] = "bg-danger"
+	if err := app.renderTemplate(w, r, "sale", &templateData{
+		StringMap: stringMap,
+	}); err != nil {
+		app.logger.Error(err.Error())
+	}
+}
+
+func (app *application) ShowSubscription(w http.ResponseWriter, r *http.Request) {
+	stringMap := make(map[string]string)
+	stringMap["title"] = "Subscription"
+	stringMap["cancel"] = "/admin/all-subscriptions"
+	stringMap["refund-url"] = "/api/admin/cancel-subscription"
+	stringMap["refund-btn"] = "Cancel Subscription"
+	stringMap["messages"] = "Subscription Cancelled"
+	stringMap["text"] = "Your subscription has been cancelled."
+	stringMap["status"] = "Cancelled"
+	stringMap["bg-status"] = "bg-dark"
+
+	if err := app.renderTemplate(w, r, "sale", &templateData{
+		StringMap: stringMap,
+	}); err != nil {
 		app.logger.Error(err.Error())
 	}
 }

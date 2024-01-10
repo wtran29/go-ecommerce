@@ -1,0 +1,138 @@
+{{template "base" .}}
+
+
+{{define "title"}}
+All Sales
+{{end}}
+
+
+{{define "content"}}
+    <h2 class="mt-5">All Sales</h2>
+    <hr>
+
+    <table id="sales-table" class="table table-striped">
+        <thead>
+            <tr>
+                <th>Transaction</th>
+                <th>Customer</th>
+                <th>Product</th>
+                <th>Amount</th>
+                <th>Status</th>
+                
+            </tr>
+        </thead>
+
+        <tbody>
+
+        </tbody>
+    </table>
+    <nav>
+        <ul id="paginator" class="pagination">
+            
+        </ul>
+    </nav>
+{{end}}
+
+{{define "js"}}
+<script>
+let currentPage = 1;
+let pageSize = 5;
+
+paginator = (pages, currPage) => {
+    let p = document.getElementById("paginator");
+    let html = `<li class="page-item"><a href="#!" class="page-link pager" data-page="${currPage-1}">&laquo;</a></li>`;
+    for (var i = 0; i<= pages; i++){
+        html += `<li class="page-item"><a href="#!" class="page-link pager" data-page="${i+1}">${i+1}</a></li>`;
+    }        
+    html += `<li class="page-item"><a href="#!" class="page-link pager" data-page="${currPage+1}">&raquo;</a></li>`;
+
+    p.innerHTML = html;
+
+    let pageBtns = document.getElementsByClassName("pager");
+    for (var j = 0; j < pageBtns.length; j++) {
+        pageBtns[j].addEventListener("click", (e)=>{
+            let desiredPage = e.target.getAttribute("data-page");
+            console.log("clicked, and data-page is", desiredPage);
+            if ((desiredPage > 0) && (desiredPage <= pages + 1)) {
+                console.log("would go to page", desiredPage);
+                updateTable(pageSize, desiredPage);
+            }
+        })
+    }
+}
+
+updateTable = (pgSize, currPage) => {
+    
+    let token = localStorage.getItem("token");
+    let tbody = document.getElementById("sales-table").getElementsByTagName("tbody")[0];
+    tbody.innerHTML = "";
+
+    let payload = {
+        page_size: parseInt(pgSize, 10),
+        page: parseInt(currPage, 10),
+    }
+
+    const requestOptions = {
+        method: 'post',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token,
+        },
+        body: JSON.stringify(payload),
+    }
+    console.log(requestOptions["body"]);
+
+    fetch("{{.API}}/api/admin/all-sales", requestOptions)
+    .then(resp => resp.json())
+    .then(function(data){
+        console.log(data);
+        if (data.orders) {
+            data.orders.forEach(function(i) {
+                let newRow = tbody.insertRow();
+                let newCell = newRow.insertCell();
+
+                newCell.innerHTML = `<a href="/admin/sales/${i.id}">Order ${i.id}</a>`;
+                newCell = newRow.insertCell();
+                let obj = document.createTextNode(i.customer.last_name + ", " + i.customer.first_name);
+                newCell.appendChild(obj);
+
+                newCell = newRow.insertCell();
+                obj = document.createTextNode(i.item.name);
+                newCell.appendChild(obj);
+
+                let cur = formatCurrency(i.transaction.amount);
+                newCell = newRow.insertCell();
+                obj = document.createTextNode(cur);
+                newCell.appendChild(obj);
+
+                newCell = newRow.insertCell();
+                if (i.status_id != 1) {
+                    newCell.innerHTML = `<span class="badge bg-danger">Refunded</span>`;
+                } else {
+                    newCell.innerHTML = `<span class="badge bg-success">Charged</span>`;
+
+                }
+            })
+            paginator(data.last_page, data.current_page);
+        } else {
+            let newRow = tbody.insertRow();
+            let newCell = newRow.insertCell();
+            newCell.setAttribute("colspan", "5");
+            newCell.innerHTML = "No data available";
+        }
+    })
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+    updateTable(pageSize, currentPage);
+});
+    formatCurrency = (amount) => {
+        let c = parseFloat(amount/100);
+        return c.toLocaleString("en-US", {
+            style: "currency",
+            currency: "USD",
+        })
+    }
+</script>
+{{end}}

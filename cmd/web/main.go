@@ -11,8 +11,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/alexedwards/scs/postgresstore"
 	"github.com/alexedwards/scs/v2"
 	_ "github.com/joho/godotenv/autoload"
+
 	"github.com/wtran29/go-ecommerce/internal/driver"
 	"github.com/wtran29/go-ecommerce/internal/models"
 )
@@ -33,6 +35,8 @@ type config struct {
 		secret string
 		key    string
 	}
+	secretkey string
+	frontend  string
 }
 
 type application struct {
@@ -65,6 +69,8 @@ func main() {
 	flag.StringVar(&cfg.api, "api", "http://localhost:4001", "URL to API")
 	flag.StringVar(&cfg.db.dsn, "dsn", fmt.Sprintf("host=%v port=%v user=%v password=%v dbname=%v sslmode=disable timezone=UTC connect_timeout=5",
 		os.Getenv("ECOMM_HOST"), os.Getenv("ECOMM_PORT"), os.Getenv("ECOMM_USER"), os.Getenv("ECOMM_PW"), os.Getenv("ECOMM_DBNAME")), "DSN")
+	flag.StringVar(&cfg.secretkey, "secret", fmt.Sprintf("%v", os.Getenv("SKEY")), "secret key")
+	flag.StringVar(&cfg.frontend, "frontend", "http://localhost:4000", "url for frontend")
 
 	flag.Parse()
 
@@ -83,6 +89,7 @@ func main() {
 	// set up session
 	session = scs.New()
 	session.Lifetime = 24 * time.Hour
+	session.Store = postgresstore.New(conn)
 
 	tc := make(map[string]*template.Template)
 

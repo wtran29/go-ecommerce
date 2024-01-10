@@ -3,8 +3,11 @@ package models
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // DBModel type for database connection values
@@ -40,15 +43,18 @@ type Item struct {
 
 // Order type for all orders
 type Order struct {
-	ID            int       `json:"id"`
-	ItemID        int       `json:"item_id"`
-	TransactionID int       `json:"transaction_id"`
-	CustomerID    int       `json:"customer_id"`
-	StatusID      int       `json:"status_id"`
-	Quantity      int       `json:"quantity"`
-	Amount        int       `json:"amount"`
-	CreatedAt     time.Time `json:"-"`
-	UpdatedAt     time.Time `json:"-"`
+	ID            int         `json:"id"`
+	ItemID        int         `json:"item_id"`
+	TransactionID int         `json:"transaction_id"`
+	CustomerID    int         `json:"customer_id"`
+	StatusID      int         `json:"status_id"`
+	Quantity      int         `json:"quantity"`
+	Amount        int         `json:"amount"`
+	CreatedAt     time.Time   `json:"-"`
+	UpdatedAt     time.Time   `json:"-"`
+	Item          Item        `json:"item"`
+	Transaction   Transaction `json:"transaction"`
+	Customer      Customer    `json:"customer"`
 }
 
 // Status type for order statuses
@@ -292,4 +298,240 @@ func (m *DBModel) GetUserByEmail(email string) (User, error) {
 		return u, err
 	}
 	return u, nil
+}
+
+func (m *DBModel) Authenticate(email, password string) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var id int
+	var hashedPassword string
+
+	row := m.DB.QueryRowContext(ctx, `SELECT id, password FROM users WHERE email = $1`, email)
+	err := row.Scan(&id, &hashedPassword)
+	if err != nil {
+		return id, err
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+	if err == bcrypt.ErrMismatchedHashAndPassword {
+		return 0, errors.New("incorrect password")
+	} else if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func (m *DBModel) UpdatePasswordForUser(u User, hash string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	stmt := `UPDATE users SET password = $1 WHERE id = $2`
+	_, err := m.DB.ExecContext(ctx, stmt, hash, u.ID)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *DBModel) GetAllOrders(recurring bool) ([]*Order, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var orders []*Order
+
+	query := `
+	select o.id, o.item_id, o.transaction_id, o.customer_id, o.status_id, o.quantity, o.amount, o.created_at, o.updated_at,
+		i.id, i.name, t.id, t.amount, t.currency, t.last_four, t.expiry_month, t.expiry_year, t.payment_intent, t.bank_return_code,
+		c.id, c.first_name, c.last_name, c.email
+	from orders o
+	left join items i on (o.item_id = i.id)
+	left join transactions t on (o.transaction_id = t.id)
+	left join customers c on (o.customer_id = c.id)
+	where i.is_recurring = $1 
+	order by o.created_at desc 
+	`
+
+	rows, err := m.DB.QueryContext(ctx, query, recurring)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var o Order
+		err = rows.Scan(
+			&o.ID,
+			&o.ItemID,
+			&o.TransactionID,
+			&o.CustomerID,
+			&o.StatusID,
+			&o.Quantity,
+			&o.Amount,
+			&o.CreatedAt,
+			&o.UpdatedAt,
+			&o.Item.ID,
+			&o.Item.Name,
+			&o.Transaction.ID,
+			&o.Transaction.Amount,
+			&o.Transaction.Currency,
+			&o.Transaction.LastFour,
+			&o.Transaction.ExpiryMonth,
+			&o.Transaction.ExpiryYear,
+			&o.Transaction.PaymentIntent,
+			&o.Transaction.BankReturnCode,
+			&o.Customer.ID,
+			&o.Customer.FirstName,
+			&o.Customer.LastName,
+			&o.Customer.Email,
+		)
+		if err != nil {
+			return nil, err
+		}
+		orders = append(orders, &o)
+	}
+	return orders, nil
+}
+
+// GetAllOrdersPaginated returns a slice of a subset of orders
+func (m *DBModel) GetAllOrdersPaginated(recurring bool, pageSize, page int) ([]*Order, int, int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	offset := (page - 1) * pageSize
+
+	var orders []*Order
+
+	query := `
+	select o.id, o.item_id, o.transaction_id, o.customer_id, o.status_id, o.quantity, o.amount, o.created_at, o.updated_at,
+		i.id, i.name, t.id, t.amount, t.currency, t.last_four, t.expiry_month, t.expiry_year, t.payment_intent, t.bank_return_code,
+		c.id, c.first_name, c.last_name, c.email
+	from orders o
+	left join items i on (o.item_id = i.id)
+	left join transactions t on (o.transaction_id = t.id)
+	left join customers c on (o.customer_id = c.id)
+	where i.is_recurring = $1 
+	order by o.created_at desc 
+	limit $2 offset $3
+	`
+
+	rows, err := m.DB.QueryContext(ctx, query, recurring, pageSize, offset)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var o Order
+		err = rows.Scan(
+			&o.ID,
+			&o.ItemID,
+			&o.TransactionID,
+			&o.CustomerID,
+			&o.StatusID,
+			&o.Quantity,
+			&o.Amount,
+			&o.CreatedAt,
+			&o.UpdatedAt,
+			&o.Item.ID,
+			&o.Item.Name,
+			&o.Transaction.ID,
+			&o.Transaction.Amount,
+			&o.Transaction.Currency,
+			&o.Transaction.LastFour,
+			&o.Transaction.ExpiryMonth,
+			&o.Transaction.ExpiryYear,
+			&o.Transaction.PaymentIntent,
+			&o.Transaction.BankReturnCode,
+			&o.Customer.ID,
+			&o.Customer.FirstName,
+			&o.Customer.LastName,
+			&o.Customer.Email,
+		)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		orders = append(orders, &o)
+	}
+	query = `
+		SELECT count(o.id)
+		FROM orders o
+		LEFT JOIN items i on (o.item_id = i.id)
+		WHERE i.is_recurring = $1
+	`
+	var totalRecords int
+	countRow := m.DB.QueryRowContext(ctx, query, recurring)
+	err = countRow.Scan(&totalRecords)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	lastPage := totalRecords / pageSize
+
+	return orders, lastPage, totalRecords, nil
+}
+
+func (m *DBModel) GetOrderByID(id int) (Order, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var o Order
+
+	query := `
+	select o.id, o.item_id, o.transaction_id, o.customer_id, o.status_id, o.quantity, o.amount, o.created_at, o.updated_at,
+		i.id, i.name, t.id, t.amount, t.currency, t.last_four, t.expiry_month, t.expiry_year, t.payment_intent, t.bank_return_code,
+		c.id, c.first_name, c.last_name, c.email
+	from orders o
+	left join items i on (o.item_id = i.id)
+	left join transactions t on (o.transaction_id = t.id)
+	left join customers c on (o.customer_id = c.id)
+	where o.id = $1 
+	
+	`
+
+	row := m.DB.QueryRowContext(ctx, query, id)
+
+	err := row.Scan(
+		&o.ID,
+		&o.ItemID,
+		&o.TransactionID,
+		&o.CustomerID,
+		&o.StatusID,
+		&o.Quantity,
+		&o.Amount,
+		&o.CreatedAt,
+		&o.UpdatedAt,
+		&o.Item.ID,
+		&o.Item.Name,
+		&o.Transaction.ID,
+		&o.Transaction.Amount,
+		&o.Transaction.Currency,
+		&o.Transaction.LastFour,
+		&o.Transaction.ExpiryMonth,
+		&o.Transaction.ExpiryYear,
+		&o.Transaction.PaymentIntent,
+		&o.Transaction.BankReturnCode,
+		&o.Customer.ID,
+		&o.Customer.FirstName,
+		&o.Customer.LastName,
+		&o.Customer.Email,
+	)
+	if err != nil {
+		return o, err
+	}
+
+	return o, nil
+}
+
+func (m *DBModel) UpdateOrderStatus(id, statusID int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	stmt := `UPDATE orders SET status_id = $1 WHERE id = $2`
+
+	_, err := m.DB.ExecContext(ctx, stmt, statusID, id)
+	if err != nil {
+		return err
+	}
+	return nil
 }
