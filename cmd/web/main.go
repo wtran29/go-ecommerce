@@ -102,6 +102,8 @@ func main() {
 		Session:       session,
 	}
 
+	go app.ListenToWsChannel()
+
 	// app.DB.CreateTables()
 
 	err = app.serve()
