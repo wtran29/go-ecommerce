@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -103,6 +106,21 @@ func (app *application) GetTransactionData(r *http.Request) (TransactionData, er
 
 }
 
+type Invoice struct {
+	ID        int       `json:"id"`
+	FirstName string    `json:"first_name"`
+	LastName  string    `json:"last_name"`
+	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"-"`
+	Products  []Product `json:"products"`
+}
+
+type Product struct {
+	Name     string
+	Amount   int
+	Quantity int
+}
+
 // PaymentSuccess displays the receipt page
 func (app *application) PaymentSuccess(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseForm()
@@ -167,15 +185,56 @@ func (app *application) PaymentSuccess(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:     time.Now(),
 	}
 
-	_, err = app.SaveOrder(order)
+	orderID, err := app.SaveOrder(order)
 	if err != nil {
 		app.logger.Error(err.Error())
 		return
 	}
 
+	products := []Product{
+		{Name: "Some item", Amount: order.Amount, Quantity: order.Quantity},
+	}
+	// call microservice
+	inv := Invoice{
+		ID:        orderID,
+		Products:  products,
+		FirstName: txnData.FirstName,
+		LastName:  txnData.LastName,
+		Email:     txnData.Email,
+		CreatedAt: time.Now(),
+	}
+
+	err = app.callInvoiceMicro(inv)
+	if err != nil {
+		app.logger.Error(err.Error())
+	}
+
 	// write data to session, redirect to new page
 	app.Session.Put(r.Context(), "receipt", txnData)
 	http.Redirect(w, r, "/receipt", http.StatusSeeOther)
+}
+
+func (app *application) callInvoiceMicro(inv Invoice) error {
+	url := os.Getenv("INVOICE_API")
+	out, err := json.MarshalIndent(inv, "", "\t")
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(out))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	app.logger.Info(fmt.Sprint(resp.Body))
+	return nil
 }
 
 // VirtualTerminalPaymentSuccess displays the receipt page for virtual terminal transactions

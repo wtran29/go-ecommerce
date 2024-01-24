@@ -16,6 +16,7 @@ type WsPayload struct {
 	Message     string              `json:"message"`
 	Username    string              `json:"username"`
 	MessageType string              `json:"message_type"`
+	UserID      int                 `json:"user_id"`
 	Conn        WebSocketConnection `json:"-"`
 }
 
@@ -36,11 +37,17 @@ var clients = make(map[WebSocketConnection]string)
 var wsChan = make(chan WsPayload)
 
 func (app *application) WsEndPoint(w http.ResponseWriter, r *http.Request) {
-	ws, err := upgradeConnection.Upgrade(w, r, nil)
+	wsUpgrade := w
+	if upgrade, ok := w.(interface{ Unwrap() http.ResponseWriter }); ok {
+		wsUpgrade = upgrade.Unwrap()
+	}
+	app.logger.Debug(fmt.Sprintf("w's type is %T\n", w))
+	ws, err := upgradeConnection.Upgrade(wsUpgrade, r, nil)
 	if err != nil {
 		app.logger.Error(err.Error())
 		return
 	}
+
 	app.logger.Info(fmt.Sprintf("Client connected from %s", r.RemoteAddr))
 	var response WsJsonResponse
 	response.Message = "Connected to server"
@@ -89,6 +96,7 @@ func (app *application) ListenToWsChannel() {
 		case "deleteUser":
 			response.Action = "logout"
 			response.Message = "Your account has been deleted."
+			response.UserID = e.UserID
 			app.broadcastToAll(response)
 
 		default:

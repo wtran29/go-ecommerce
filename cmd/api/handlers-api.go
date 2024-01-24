@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"github.com/wtran29/go-ecommerce/internal/encryption"
 	"github.com/wtran29/go-ecommerce/internal/models"
 	"github.com/wtran29/go-ecommerce/internal/urlsigner"
+	"github.com/wtran29/go-ecommerce/internal/validator"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -117,12 +120,39 @@ func (app *application) GetItemByID(w http.ResponseWriter, r *http.Request) {
 	w.Write(out)
 }
 
+// Invoice is the JSON payload that will be sent to the microservice
+type Invoice struct {
+	ID        int       `json:"id"`
+	FirstName string    `json:"first_name"`
+	LastName  string    `json:"last_name"`
+	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"-"`
+	Products  []Product `json:"products"`
+}
+
+// Product represents the fields of each item
+type Product struct {
+	Name     string
+	Amount   int
+	Quantity int
+}
+
 func (app *application) CreateCustomerAndSubscribe(w http.ResponseWriter, r *http.Request) {
 	var data stripePayload
 	err := json.NewDecoder(r.Body).Decode(&data)
 	if err != nil {
 		app.logger.Error(err.Error())
 		http.Error(w, "Error decoding JSON", http.StatusBadRequest)
+		return
+	}
+
+	// validate data
+	v := validator.New()
+	v.Check(len(data.FirstName) > 1, "first_name", "must be at least 2 characters")
+	v.Check(len(data.LastName) > 1, "last_name", "must be at least 2 characters")
+
+	if !v.Valid() {
+		app.failedValidation(w, r, v.Errors)
 		return
 	}
 
@@ -190,7 +220,7 @@ func (app *application) CreateCustomerAndSubscribe(w http.ResponseWriter, r *htt
 			return
 		}
 
-		orderID := models.Order{
+		order := models.Order{
 			ItemID:        productID,
 			TransactionID: txnID,
 			CustomerID:    customerID,
@@ -201,10 +231,40 @@ func (app *application) CreateCustomerAndSubscribe(w http.ResponseWriter, r *htt
 			UpdatedAt:     time.Now(),
 		}
 
-		_, err = app.SaveOrder(orderID)
+		orderID, err := app.SaveOrder(order)
 		if err != nil {
 			app.logger.Error(err.Error())
 			return
+		}
+
+		var products []Product
+		// GetItemsByOrderID here?
+		orders, err := app.GetProductsForInvoice(order)
+		if err != nil {
+			app.logger.Error(err.Error())
+			return
+		}
+
+		for _, order := range orders {
+			var product Product
+			product.Name = order.Item.Name
+			product.Quantity = order.Quantity
+			product.Amount = order.Amount
+			products = append(products, product)
+		}
+
+		inv := Invoice{
+			ID:        orderID,
+			FirstName: data.FirstName,
+			LastName:  data.LastName,
+			Email:     data.Email,
+			CreatedAt: time.Now(),
+			Products:  products,
+		}
+
+		err = app.callInvoiceMicro(inv)
+		if err != nil {
+			app.logger.Error(err.Error())
 		}
 
 	}
@@ -223,6 +283,32 @@ func (app *application) CreateCustomerAndSubscribe(w http.ResponseWriter, r *htt
 	w.Header().Set("Content-Type", "application/json")
 
 	w.Write(out)
+}
+
+func (app *application) callInvoiceMicro(inv Invoice) error {
+	url := os.Getenv("INVOICE_API")
+	out, err := json.MarshalIndent(inv, "", " ")
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(out))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+	app.logger.Info(fmt.Sprint(resp.Body))
+
+	return nil
 }
 
 // SaveCustomer saves a customer and returns customer id
@@ -253,6 +339,15 @@ func (app *application) SaveOrder(order models.Order) (int, error) {
 		return 0, err
 	}
 	return id, nil
+}
+
+func (app *application) GetProductsForInvoice(order models.Order) ([]*models.Order, error) {
+	orders, err := app.DB.GetAllOrdersByUser(order.CustomerID, order.CreatedAt)
+	if err != nil {
+		app.logger.Error(err.Error())
+		return nil, err
+	}
+	return orders, nil
 }
 
 // CreateAuthToken creates an auth token
