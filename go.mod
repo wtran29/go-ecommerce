@@ -11,7 +11,12 @@ require (
 	github.com/stripe/stripe-go/v76 v76.10.0
 )
 
-require github.com/go-test/deep v1.1.0 // indirect
+require (
+	github.com/go-test/deep v1.1.0 // indirect
+	github.com/phpdave11/gofpdf v1.4.2 // indirect
+	github.com/phpdave11/gofpdi v1.0.12 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
+)
 
 require (
 	github.com/alexedwards/scs/postgresstore v0.0.0-20231113091146-cef4b05350c8
